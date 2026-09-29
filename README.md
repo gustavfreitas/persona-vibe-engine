@@ -41,6 +41,16 @@ até k=10 sem cotovelo, por isso não indica um k, e as probabilidades são
 demasiado extremas (menos de 3 % de faixas ambíguas) para servirem como
 medida de confiança. Mantive o K-Means com k=5.
 
+## Transformação das features
+
+Testei binarizar `instrumentalness` e aplicar Yeo-Johnson antes do K-Means (k=5).
+A binarização deu um silhouette de 0.225 (baseline 0.218) e ARI 0.950 face ao
+baseline, ou seja, quase os mesmos clusters. O Yeo-Johnson alterou mais os
+grupos (ARI 0.704) e equilibrou um pouco os tamanhos (8 663 a 25 979 faixas, em
+vez de 6 739 a 29 998), mas com silhouette 0.207. Como o silhouette não é
+comparável entre espaços transformados e os ganhos são pequenos, mantive o
+`StandardScaler` simples, que também simplifica a persistência do modelo.
+
 ## Estrutura
 
 ```
