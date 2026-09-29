@@ -1,4 +1,4 @@
-"""Interface Streamlit: recomendações por mood e classificação de faixas novas."""
+﻿"""Interface Streamlit: recomendações por mood e classificação de faixas novas."""
 
 import re
 from pathlib import Path
@@ -20,6 +20,7 @@ CSV_PATH: Path = DEFAULT_OUTPUT
 N_RECOMMENDATIONS = 5
 MAX_SEARCH_RESULTS = 50  # evita menus gigantescos em buscas muito genéricas
 POPULAR_POOL_SIZE = 30  # nº de vizinhos mais próximos entre os quais se escolhem os mais populares
+
 
 # ------------------------------ dados -------------------------------- #
 @st.cache_data
@@ -92,7 +93,7 @@ def recommend(
         return candidates.drop(columns="_version_key")
 
     # Pesos: omissos valem 1; se o utilizador zerar tudo, volta ao peso igual
-    w = pd.Series(weights or {}).reindex(FEATURE_COLUMNS).fillna(1.0)
+    w = pd.Series(weights or {}, dtype=float).reindex(FEATURE_COLUMNS).fillna(1.0)
     if w.sum() <= 0:
         w[:] = 1.0
 

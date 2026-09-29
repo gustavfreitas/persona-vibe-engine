@@ -6,7 +6,7 @@ import pandas as pd
 from app import MAX_SEARCH_RESULTS, base_title, recommend, search_tracks
 from src.model import GENRE_COLUMN, clean_data, cluster_tracks
 from tests.test_model import make_tracks
-
+from src.model import FEATURE_COLUMNS, GENRE_COLUMN, clean_data, cluster_tracks
 
 @pytest.fixture
 def clustered():
