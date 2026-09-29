@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_SIZE = 10_000       # silhouette é O(n²): usa uma amostra
 AMBIGUOUS_THRESHOLD = 0.6  # faixa "ambígua" se a maior probabilidade for < 60 %
-K_RANGE = range(2, 11)
+K_RANGE = range(5, 6)
 
 
 def fit_gmm(scaled: np.ndarray, k: int, covariance: str = "full") -> GaussianMixture:
@@ -65,6 +65,8 @@ def parse_args() -> argparse.Namespace:
                         help="Tipo de covariância do GMM (padrão: full).")
     parser.add_argument("--save", type=Path, default=None,
                         help="Se indicado, grava o CSV com clusters e probabilidades do GMM (k=5).")
+    parser.add_argument("--k-only", type=int, default=None,
+                        help="Avalia apenas este k (mais rápido) em vez de percorrer 2-10.")
     return parser.parse_args()
 
 
@@ -76,7 +78,8 @@ def main() -> None:
     scaled = StandardScaler().fit_transform(df[FEATURE_COLUMNS])
 
     # 1) GMM para vários k
-    rows = [evaluate_gmm(scaled, k, args.covariance) for k in K_RANGE]
+    k_values = [args.k_only] if args.k_only else K_RANGE
+    rows = [evaluate_gmm(scaled, k, args.covariance) for k in k_values]
     table = pd.DataFrame(rows).set_index("k")
     print(f"\nGMM (covariância '{args.covariance}') para vários k:")
     print(table.round({"bic": 0, "aic": 0, "silhouette": 3,

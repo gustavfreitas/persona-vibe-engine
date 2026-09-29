@@ -32,6 +32,15 @@ separa dois grandes grupos, o que é pouco útil para recomendar por mood.
 Silhouette próximo de 0.2 indica clusters sobrepostos, o que é normal em
 audio features, que formam um contínuo.
 
+## Comparação com GMM
+
+Testei `GaussianMixture` (covariâncias `diag` e `full`) nas mesmas features
+padronizadas. Em k=5, o silhouette foi 0.042 (`diag`) e -0.004 (`full`), contra
+0.222 do K-Means, e o ARI entre os dois métodos foi 0.337 e 0.200. O BIC desce
+até k=10 sem cotovelo, por isso não indica um k, e as probabilidades são
+demasiado extremas (menos de 3 % de faixas ambíguas) para servirem como
+medida de confiança. Mantive o K-Means com k=5.
+
 ## Estrutura
 
 ```
