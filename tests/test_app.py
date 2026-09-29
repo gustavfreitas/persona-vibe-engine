@@ -1,8 +1,9 @@
 """Testes da lógica de busca e recomendação (app.py)."""
 
 import pytest
+import pandas as pd
 
-from app import MAX_SEARCH_RESULTS, recommend, search_tracks
+from app import MAX_SEARCH_RESULTS, base_title, recommend, search_tracks
 from src.model import GENRE_COLUMN, clean_data, cluster_tracks
 from tests.test_model import make_tracks
 
@@ -68,3 +69,20 @@ def test_recommend_has_no_duplicate_labels(clustered):
     recs = recommend(df, df.iloc[0], n=19)
     assert len(recs) == 19
     assert recs["label"].is_unique
+
+def test_base_title_strips_version_suffixes():
+    assert base_title("Can't Help Falling In Love - Piano Version") == "can't help falling in love"
+    assert base_title("Song (feat. X) - Remastered 2011") == "song"
+    assert base_title("(Intro)") == "(intro)"  # não devolve string vazia
+
+
+def test_recommend_excludes_alternative_versions(clustered):
+    # cria uma "versão piano" com features idênticas às da faixa escolhida
+    alt = clustered.iloc[[0]].copy()
+    alt["track_name"] = alt["track_name"] + " - Piano Version"
+    alt["label"] = alt["artists"] + " – " + alt["track_name"]
+    df = pd.concat([clustered, alt], ignore_index=True)
+
+    recs = recommend(df, df.iloc[0], n=19)
+    assert alt["label"].iloc[0] not in recs["label"].values
+    assert len(recs) == 19

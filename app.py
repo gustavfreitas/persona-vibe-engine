@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
+import re
 
 from src.model import DEFAULT_OUTPUT, FEATURE_COLUMNS, GENRE_COLUMN
 
@@ -27,6 +28,19 @@ def search_tracks(df: pd.DataFrame, query: str) -> pd.DataFrame:
     mask = df["track_name"].str.contains(query, case=False, regex=False, na=False)
     return df[mask].head(MAX_SEARCH_RESULTS)
 
+_BRACKETS = re.compile(r"\s*[\(\[].*?[\)\]]")
+
+
+def base_title(name: str) -> str:
+    """Título sem sufixos de versão: 'Song (feat. X) - Piano Version' -> 'song'."""
+    base = _BRACKETS.sub("", name).split(" - ")[0].strip().lower()
+    return base or name.strip().lower()
+
+
+def version_key(artists: pd.Series, names: pd.Series) -> pd.Series:
+    """Chave que identifica 'a mesma música': primeiro artista + título base."""
+    first_artist = artists.astype(str).str.split(";").str[0].str.strip().str.lower()
+    return first_artist + "|" + names.astype(str).map(base_title)
 
 def recommend(
     df: pd.DataFrame,
@@ -36,9 +50,9 @@ def recommend(
 ) -> pd.DataFrame:
     """Retorna as n faixas do mesmo cluster mais próximas da selecionada.
 
-    Opcionalmente restringe ao mesmo género. A ordenação usa a distância
-    euclidiana nas features padronizadas, para que as sugestões sejam
-    coerentes e não aleatórias.
+    Opcionalmente restringe ao mesmo género. Ordena pela distância euclidiana
+    nas features padronizadas. Exclui outras versões da própria música
+    (piano, remaster, ao vivo...) e não repete versões entre as sugestões.
     """
     mask = (df["cluster"] == selected["cluster"]) & (df["label"] != selected["label"])
     if same_genre and GENRE_COLUMN in df.columns:
@@ -48,15 +62,25 @@ def recommend(
     if candidates.empty:
         return candidates
 
+    # Remove versões alternativas da faixa escolhida
+    selected_key = version_key(
+        pd.Series([selected["artists"]]), pd.Series([selected["track_name"]])
+    ).iloc[0]
+    candidates["_version_key"] = version_key(candidates["artists"], candidates["track_name"])
+    candidates = candidates[candidates["_version_key"] != selected_key]
+    if candidates.empty:
+        return candidates.drop(columns="_version_key")
+
     std = df[FEATURE_COLUMNS].std().replace(0, 1)
     diff = (candidates[FEATURE_COLUMNS] - selected[FEATURE_COLUMNS].astype(float)) / std
     candidates["distance"] = np.sqrt((diff**2).sum(axis=1))
 
-    # drop_duplicates evita sugerir várias versões da mesma faixa
+    # Uma só versão de cada música entre as sugestões
     return (
         candidates.sort_values("distance")
-        .drop_duplicates(subset="label")
+        .drop_duplicates(subset="_version_key")
         .head(n)
+        .drop(columns="_version_key")
     )
 
 

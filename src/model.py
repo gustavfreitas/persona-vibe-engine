@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import argparse
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
+import joblib
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
-# Constantes centralizadas (o app.py também as importa, evitando duplicação)
+# Constantes centralizadas (app.py e predict.py também as importam)
 FEATURE_COLUMNS = [
     "valence", "energy", "acousticness", "instrumentalness",
     "danceability", "loudness", "tempo",
@@ -23,6 +25,7 @@ N_CLUSTERS = 5
 RANDOM_STATE = 42  # garante resultados reprodutíveis
 N_TRAITS_PER_NAME = 2  # nº de características usadas para nomear cada cluster
 DEFAULT_OUTPUT = Path("data/clustered_tracks.csv")
+DEFAULT_MODEL_PATH = Path("models/mood_model.joblib")
 
 # Rótulos (valor alto, valor baixo) usados para descrever cada cluster
 TRAIT_LABELS = {
@@ -34,6 +37,37 @@ TRAIT_LABELS = {
     "loudness": ("Intenso", "Suave"),
     "tempo": ("Rápido", "Lento"),
 }
+
+
+@dataclass
+class MoodModel:
+    """Agrupa tudo o que é preciso para classificar faixas: scaler, K-Means,
+    nomes dos clusters e a lista (ordenada) de features usadas no treino."""
+
+    scaler: StandardScaler
+    kmeans: KMeans
+    cluster_names: dict[int, str]
+    feature_columns: list[str]
+
+    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Devolve uma cópia do DataFrame com 'cluster' e 'cluster_name'.
+
+        Usa o scaler JÁ AJUSTADO no treino (transform, nunca fit): faixas novas
+        têm de ser escaladas com a média/desvio do treino, senão as distâncias
+        aos centróides deixam de fazer sentido.
+        """
+        missing = set(self.feature_columns) - set(df.columns)
+        if missing:
+            raise KeyError(f"Colunas ausentes: {sorted(missing)}")
+
+        features = df[self.feature_columns].apply(pd.to_numeric, errors="coerce")
+        if features.isna().any().any():
+            raise ValueError("Existem nulos ou valores não numéricos nas features.")
+
+        result = df.copy()
+        result["cluster"] = self.kmeans.predict(self.scaler.transform(features))
+        result["cluster_name"] = result["cluster"].map(self.cluster_names)
+        return result
 
 
 def load_dataset(path: Path) -> pd.DataFrame:
@@ -100,22 +134,54 @@ def name_clusters(df: pd.DataFrame) -> dict[int, str]:
     }
 
 
-def cluster_tracks(df: pd.DataFrame, n_clusters: int = N_CLUSTERS) -> pd.DataFrame:
-    """Normaliza as features, treina o K-Means e adiciona 'cluster' e 'cluster_name'."""
+def fit_model(df: pd.DataFrame, n_clusters: int = N_CLUSTERS) -> MoodModel:
+    """Ajusta scaler + K-Means e devolve o modelo completo."""
     if len(df) < n_clusters:
         raise ValueError(f"Necessário ao menos {n_clusters} faixas; há {len(df)}.")
 
     # O K-Means usa distância euclidiana: sem padronização, variáveis com
     # maior variância (ex.: tempo) dominariam o agrupamento.
-    scaled = StandardScaler().fit_transform(df[FEATURE_COLUMNS])
+    scaler = StandardScaler().fit(df[FEATURE_COLUMNS])
+    kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=RANDOM_STATE)
+    kmeans.fit(scaler.transform(df[FEATURE_COLUMNS]))
+    logger.info("Inércia do modelo: %.2f", kmeans.inertia_)
 
-    model = KMeans(n_clusters=n_clusters, n_init=10, random_state=RANDOM_STATE)
-    result = df.copy()
-    result["cluster"] = model.fit_predict(scaled)
-    result["cluster_name"] = result["cluster"].map(name_clusters(result))
+    names = name_clusters(df.assign(cluster=kmeans.labels_))
+    return MoodModel(scaler, kmeans, names, list(FEATURE_COLUMNS))
 
-    logger.info("Inércia do modelo: %.2f", model.inertia_)
-    return result
+
+def cluster_tracks(df: pd.DataFrame, n_clusters: int = N_CLUSTERS) -> pd.DataFrame:
+    """Atalho: treina o modelo e devolve o DataFrame com 'cluster' e 'cluster_name'."""
+    return fit_model(df, n_clusters).predict(df)
+
+
+def save_model(model: MoodModel, path: Path = DEFAULT_MODEL_PATH) -> None:
+    """Guarda o modelo com joblib.
+
+    Grava-se um dicionário simples, e não o objeto MoodModel: quando o script
+    corre com `python -m src.model`, a classe fica registada como
+    `__main__.MoodModel` e o ficheiro não poderia ser carregado noutro sítio.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {
+            "scaler": model.scaler,
+            "kmeans": model.kmeans,
+            "cluster_names": model.cluster_names,
+            "feature_columns": model.feature_columns,
+        },
+        path,
+    )
+    logger.info("Modelo guardado em %s", path)
+
+
+def load_model(path: Path = DEFAULT_MODEL_PATH) -> MoodModel:
+    """Carrega um modelo guardado por `save_model` (apenas ficheiros de confiança)."""
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Modelo não encontrado: {path}. Execute antes `python -m src.model`."
+        )
+    return MoodModel(**joblib.load(path))
 
 
 def save_dataset(df: pd.DataFrame, output_path: Path) -> None:
@@ -131,6 +197,8 @@ def parse_args() -> argparse.Namespace:
                         help="Caminho do CSV de entrada (dataset do Kaggle).")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT,
                         help=f"CSV de saída (padrão: {DEFAULT_OUTPUT}).")
+    parser.add_argument("--model-path", type=Path, default=DEFAULT_MODEL_PATH,
+                        help=f"Onde guardar o modelo (padrão: {DEFAULT_MODEL_PATH}).")
     return parser.parse_args()
 
 
@@ -139,8 +207,11 @@ def main() -> None:
     args = parse_args()
 
     df = clean_data(load_dataset(args.input_csv))
-    clustered = cluster_tracks(df)
+    model = fit_model(df)
+    clustered = model.predict(df)
+
     save_dataset(clustered, args.output)
+    save_model(model, args.model_path)
 
     # Perfil médio por cluster: ajuda a validar os nomes atribuídos
     profile = clustered.groupby(["cluster", "cluster_name"])[FEATURE_COLUMNS].mean().round(2)
