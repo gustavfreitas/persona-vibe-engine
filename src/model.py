@@ -11,6 +11,7 @@ import joblib
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from src.model import FEATURE_COLUMNS, GENRE_COLUMN, clean_data, cluster_tracks
 
 logger = logging.getLogger(__name__)
 

@@ -86,3 +86,23 @@ def test_recommend_excludes_alternative_versions(clustered):
     recs = recommend(df, df.iloc[0], n=19)
     assert alt["label"].iloc[0] not in recs["label"].values
     assert len(recs) == 19
+
+def test_weights_can_rank_by_a_single_feature(clustered):
+    selected = clustered.iloc[0]
+    only_valence = {f: 0.0 for f in FEATURE_COLUMNS} | {"valence": 1.0}
+    recs = recommend(clustered, selected, n=10, weights=only_valence)
+    gaps = (recs["valence"] - selected["valence"]).abs()
+    assert gaps.is_monotonic_increasing
+
+
+def test_all_zero_weights_fall_back_to_equal_weights(clustered):
+    selected = clustered.iloc[0]
+    zeros = {f: 0.0 for f in FEATURE_COLUMNS}
+    assert len(recommend(clustered, selected, weights=zeros)) == 5
+
+
+def test_prefer_popular_sorts_by_popularity(clustered):
+    df = clustered.assign(popularity=list(range(len(clustered))))
+    recs = recommend(df, df.iloc[0], prefer_popular=True)
+    assert len(recs) == 5
+    assert recs["popularity"].is_monotonic_decreasing

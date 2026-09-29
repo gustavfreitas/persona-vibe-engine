@@ -19,7 +19,7 @@ from src.predict import classify_dataframe
 CSV_PATH: Path = DEFAULT_OUTPUT
 N_RECOMMENDATIONS = 5
 MAX_SEARCH_RESULTS = 50  # evita menus gigantescos em buscas muito genéricas
-
+POPULAR_POOL_SIZE = 30  # nº de vizinhos mais próximos entre os quais se escolhem os mais populares
 
 # ------------------------------ dados -------------------------------- #
 @st.cache_data
@@ -64,12 +64,16 @@ def recommend(
     selected: pd.Series,
     n: int = N_RECOMMENDATIONS,
     same_genre: bool = False,
+    weights: dict[str, float] | None = None,
+    prefer_popular: bool = False,
 ) -> pd.DataFrame:
     """Retorna as n faixas do mesmo cluster mais próximas da selecionada.
 
-    Opcionalmente restringe ao mesmo género. Ordena pela distância euclidiana
-    nas features padronizadas. Exclui outras versões da própria música
-    (piano, remaster, ao vivo...) e não repete versões entre as sugestões.
+    - `weights`: importância de cada feature na distância (omissos = 1).
+      A distância é sqrt(sum(w * diff²)) sobre features padronizadas.
+    - `prefer_popular`: entre as POPULAR_POOL_SIZE mais próximas, devolve as
+      mais populares (requer a coluna 'popularity').
+    Exclui outras versões da própria música e não repete versões.
     """
     mask = (df["cluster"] == selected["cluster"]) & (df["label"] != selected["label"])
     if same_genre and GENRE_COLUMN in df.columns:
@@ -87,25 +91,40 @@ def recommend(
     if candidates.empty:
         return candidates.drop(columns="_version_key")
 
+    # Pesos: omissos valem 1; se o utilizador zerar tudo, volta ao peso igual
+    w = pd.Series(weights or {}).reindex(FEATURE_COLUMNS).fillna(1.0)
+    if w.sum() <= 0:
+        w[:] = 1.0
+
     std = df[FEATURE_COLUMNS].std().replace(0, 1)
     diff = (candidates[FEATURE_COLUMNS] - selected[FEATURE_COLUMNS].astype(float)) / std
-    candidates["distance"] = np.sqrt((diff**2).sum(axis=1))
+    candidates["distance"] = np.sqrt((diff**2 * w).sum(axis=1))
 
-    return (
-        candidates.sort_values("distance")
-        .drop_duplicates(subset="_version_key")
-        .head(n)
-        .drop(columns="_version_key")
-    )
+    ranked = candidates.sort_values("distance").drop_duplicates(subset="_version_key")
+    if prefer_popular and "popularity" in ranked.columns:
+        ranked = ranked.head(POPULAR_POOL_SIZE).sort_values(
+            "popularity", ascending=False, kind="stable"
+        )
+    return ranked.head(n).drop(columns="_version_key")
 
+def render_weights_sidebar() -> dict[str, float]:
+    """Sliders com a importância de cada característica na recomendação."""
+    st.sidebar.header("Importância das características")
+    st.sidebar.caption("1 = normal · 0 = ignorar · 3 = o triplo. Só afeta a ordenação dentro do mood.")
+    return {f: st.sidebar.slider(f, 0.0, 3.0, 1.0, 0.5) for f in FEATURE_COLUMNS}
 
 # ------------------------------ abas --------------------------------- #
-def render_recommend_tab(df: pd.DataFrame) -> None:
+
+def render_recommend_tab(df: pd.DataFrame, weights: dict[str, float]) -> None:
     has_genre = GENRE_COLUMN in df.columns
+    has_popularity = "popularity" in df.columns
 
     query = st.text_input("Buscar música pelo nome:", placeholder="ex.: Yellow")
     same_genre = (
         st.checkbox("Restringir ao mesmo género", value=True) if has_genre else False
+    )
+    prefer_popular = (
+        st.checkbox("Preferir faixas mais populares", value=False) if has_popularity else False
     )
 
     if not query.strip():
@@ -127,7 +146,9 @@ def render_recommend_tab(df: pd.DataFrame) -> None:
     genre_info = f" · Género: **{selected[GENRE_COLUMN]}**" if has_genre else ""
     st.caption(f"Mood: **{selected['cluster_name']}**{genre_info}")
 
-    recs = recommend(df, selected, same_genre=same_genre)
+    recs = recommend(
+        df, selected, same_genre=same_genre, weights=weights, prefer_popular=prefer_popular
+    )
     if recs.empty:
         st.warning("Não há outras faixas com estes critérios. Tente desativar o filtro de género.")
         return
@@ -138,12 +159,17 @@ def render_recommend_tab(df: pd.DataFrame) -> None:
 
     for i, (_, row) in enumerate(recs.iterrows(), start=1):
         genre = f" · _{row[GENRE_COLUMN]}_" if has_genre else ""
-        st.markdown(f"**{i}. {row['track_name']}** — {row['artists']}{genre}")
+        pop = f" · popularidade {int(row['popularity'])}" if has_popularity else ""
+        st.markdown(f"**{i}. {row['track_name']}** — {row['artists']}{genre}{pop}")
 
-    cols = ["track_name", "artists", *([GENRE_COLUMN] if has_genre else []), *FEATURE_COLUMNS]
+    cols = [
+        "track_name", "artists",
+        *([GENRE_COLUMN] if has_genre else []),
+        *(["popularity"] if has_popularity else []),
+        *FEATURE_COLUMNS,
+    ]
     with st.expander("Ver características acústicas"):
         st.dataframe(recs[cols], hide_index=True)
-
 
 def render_classify_tab() -> None:
     """Aba para atribuir um mood a faixas novas, usando o modelo guardado."""
@@ -203,9 +229,10 @@ def main() -> None:
         st.error("O CSV é de uma versão antiga. Volte a executar `python -m src.model`.")
         st.stop()
 
+        weights = render_weights_sidebar()
     tab_recommend, tab_classify = st.tabs(["Recomendar", "Classificar faixas novas"])
     with tab_recommend:
-        render_recommend_tab(df)
+        render_recommend_tab(df, weights)
     with tab_classify:
         render_classify_tab()
 
