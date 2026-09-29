@@ -51,6 +51,17 @@ vez de 6 739 a 29 998), mas com silhouette 0.207. Como o silhouette não é
 comparável entre espaços transformados e os ganhos são pequenos, mantive o
 `StandardScaler` simples, que também simplifica a persistência do modelo.
 
+## Avaliação das recomendações
+
+Em 200 faixas de partida (filtro de género desligado), medi a percentagem de
+recomendações com o mesmo género da faixa escolhida. A ordenação por distância
+ficou claramente acima do baseline aleatório (aprox. 9 % contra 1.6 % no cluster
+e 0.8 % no dataset). Dar mais peso a features individuais não alterou de forma
+mensurável esta métrica. A opção "preferir populares" quase duplicou a
+popularidade média das sugestões (33 para 61), com uma descida não conclusiva
+da consistência de género. O género é um proxy ruidoso (114 géneros, um por
+faixa), por isso os valores absolutos são baixos.
+
 ## Estrutura
 
 ```

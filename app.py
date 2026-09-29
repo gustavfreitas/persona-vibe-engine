@@ -1,4 +1,4 @@
-﻿"""Interface Streamlit: recomendações por mood e classificação de faixas novas."""
+"""Interface Streamlit: recomendações por mood e classificação de faixas novas."""
 
 import re
 from pathlib import Path
@@ -12,17 +12,35 @@ from src.model import (
     DEFAULT_OUTPUT,
     FEATURE_COLUMNS,
     GENRE_COLUMN,
+    build_artifacts,
     load_model,
 )
 from src.predict import classify_dataframe
 
 CSV_PATH: Path = DEFAULT_OUTPUT
+DATASET_PATH = Path("data/dataset.csv")
 N_RECOMMENDATIONS = 5
 MAX_SEARCH_RESULTS = 50  # evita menus gigantescos em buscas muito genéricas
-POPULAR_POOL_SIZE = 30  # nº de vizinhos mais próximos entre os quais se escolhem os mais populares
+POPULAR_POOL_SIZE = 30  # vizinhos mais próximos entre os quais se escolhem os mais populares
 
 
 # ------------------------------ dados -------------------------------- #
+@st.cache_resource(show_spinner="A preparar o modelo (só na primeira execução)...")
+def ensure_artifacts() -> None:
+    """Gera o CSV com clusters e o modelo se ainda não existirem.
+
+    Num deploy limpo (Streamlit Cloud) estes ficheiros não vêm no Git.
+    O cache_resource garante que só uma sessão executa o treino.
+    """
+    if CSV_PATH.exists() and DEFAULT_MODEL_PATH.exists():
+        return
+    if not DATASET_PATH.exists():
+        raise FileNotFoundError(
+            f"Falta `{DATASET_PATH}`. Coloque o CSV do Kaggle nessa pasta."
+        )
+    build_artifacts(DATASET_PATH, CSV_PATH, DEFAULT_MODEL_PATH)
+
+
 @st.cache_data
 def load_data(path: Path, mtime: float) -> pd.DataFrame:
     """Lê o CSV uma única vez. O 'mtime' faz parte da chave da cache, por isso
@@ -108,13 +126,14 @@ def recommend(
         )
     return ranked.head(n).drop(columns="_version_key")
 
+
+# ------------------------------ abas --------------------------------- #
 def render_weights_sidebar() -> dict[str, float]:
     """Sliders com a importância de cada característica na recomendação."""
     st.sidebar.header("Importância das características")
     st.sidebar.caption("1 = normal · 0 = ignorar · 3 = o triplo. Só afeta a ordenação dentro do mood.")
     return {f: st.sidebar.slider(f, 0.0, 3.0, 1.0, 0.5) for f in FEATURE_COLUMNS}
 
-# ------------------------------ abas --------------------------------- #
 
 def render_recommend_tab(df: pd.DataFrame, weights: dict[str, float]) -> None:
     has_genre = GENRE_COLUMN in df.columns
@@ -172,13 +191,11 @@ def render_recommend_tab(df: pd.DataFrame, weights: dict[str, float]) -> None:
     with st.expander("Ver características acústicas"):
         st.dataframe(recs[cols], hide_index=True)
 
+
 def render_classify_tab() -> None:
     """Aba para atribuir um mood a faixas novas, usando o modelo guardado."""
     if not DEFAULT_MODEL_PATH.exists():
-        st.error(
-            f"Modelo `{DEFAULT_MODEL_PATH}` não encontrado. Execute antes: "
-            "`python -m src.model --input-csv data/dataset.csv`"
-        )
+        st.error(f"Modelo `{DEFAULT_MODEL_PATH}` não encontrado. Recarregue a página.")
         return
 
     model = get_model(DEFAULT_MODEL_PATH, DEFAULT_MODEL_PATH.stat().st_mtime)
@@ -218,19 +235,18 @@ def main() -> None:
     st.set_page_config(page_title="Mood Recommender", page_icon="🎧")
     st.title("🎧 Recomendador Musical por Mood")
 
-    if not CSV_PATH.exists():
-        st.error(
-            f"Arquivo `{CSV_PATH}` não encontrado. Execute antes: "
-            "`python -m src.model --input-csv data/dataset.csv`"
-        )
+    try:
+        ensure_artifacts()
+    except FileNotFoundError as exc:
+        st.error(str(exc))
         st.stop()
 
     df = load_data(CSV_PATH, CSV_PATH.stat().st_mtime)
     if "cluster_name" not in df.columns:
-        st.error("O CSV é de uma versão antiga. Volte a executar `python -m src.model`.")
+        st.error("O CSV é de uma versão antiga. Apague `data/clustered_tracks.csv` e recarregue.")
         st.stop()
 
-        weights = render_weights_sidebar()
+    weights = render_weights_sidebar()
     tab_recommend, tab_classify = st.tabs(["Recomendar", "Classificar faixas novas"])
     with tab_recommend:
         render_recommend_tab(df, weights)

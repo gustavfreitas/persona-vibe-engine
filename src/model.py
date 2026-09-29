@@ -190,6 +190,22 @@ def save_dataset(df: pd.DataFrame, output_path: Path) -> None:
     df.to_csv(output_path, index=False)
     logger.info("Resultado salvo em %s", output_path)
 
+def build_artifacts(
+    input_csv: Path,
+    output_csv: Path = DEFAULT_OUTPUT,
+    model_path: Path = DEFAULT_MODEL_PATH,
+) -> tuple[pd.DataFrame, MoodModel]:
+    """Pipeline completo: limpa, treina e grava o CSV com clusters e o modelo.
+
+    É usada pelo CLI e pela app (que a chama no arranque se os ficheiros
+    ainda não existirem, como acontece num deploy limpo).
+    """
+    df = clean_data(load_dataset(input_csv))
+    model = fit_model(df)
+    clustered = model.predict(df)
+    save_dataset(clustered, output_csv)
+    save_model(model, model_path)
+    return clustered, model
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ClusterizaÃ§Ã£o musical por mood.")
@@ -206,12 +222,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
     args = parse_args()
 
-    df = clean_data(load_dataset(args.input_csv))
-    model = fit_model(df)
-    clustered = model.predict(df)
-
-    save_dataset(clustered, args.output)
-    save_model(model, args.model_path)
+    clustered, _ = build_artifacts(args.input_csv, args.output, args.model_path)
 
     # Perfil mÃ©dio por cluster: ajuda a validar os nomes atribuÃ­dos
     profile = clustered.groupby(["cluster", "cluster_name"])[FEATURE_COLUMNS].mean().round(2)

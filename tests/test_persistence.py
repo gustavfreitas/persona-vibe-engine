@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.model import FEATURE_COLUMNS, clean_data, fit_model, load_model, save_model
+from src.model import FEATURE_COLUMNS, clean_data, fit_model, load_model, save_model, build_artifacts
 from tests.test_model import make_tracks
 
 
@@ -49,3 +49,14 @@ def test_predict_rejects_nulls(trained):
     bad.loc[0, "tempo"] = np.nan
     with pytest.raises(ValueError):
         model.predict(bad)
+
+def test_build_artifacts_writes_csv_and_model(tmp_path):
+    source = tmp_path / "in.csv"
+    make_tracks().to_csv(source, index=False)
+    out_csv, out_model = tmp_path / "out.csv", tmp_path / "m" / "model.joblib"
+
+    clustered, model = build_artifacts(source, out_csv, out_model)
+
+    assert out_csv.exists() and out_model.exists()
+    assert len(clustered) == 100
+    assert {"cluster", "cluster_name"} <= set(clustered.columns)

@@ -106,3 +106,7 @@ def test_prefer_popular_sorts_by_popularity(clustered):
     recs = recommend(df, df.iloc[0], prefer_popular=True)
     assert len(recs) == 5
     assert recs["popularity"].is_monotonic_decreasing
+
+def test_recommend_distance_is_numeric_without_weights(clustered):
+    recs = recommend(clustered, clustered.iloc[0])
+    assert recs["distance"].dtype == float

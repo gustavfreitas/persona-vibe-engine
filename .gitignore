@@ -11,6 +11,7 @@ venv/
 # Dados: os CSVs são grandes e reprodutíveis; mantém só a pasta
 data/*.csv
 !data/.gitkeep
+!data/dataset.csv
 
 # Editor
 .vscode/
