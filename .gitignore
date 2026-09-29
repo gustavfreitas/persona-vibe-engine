@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Segredos (caso volte a usar a API)
+.env
+
+# Dados: os CSVs são grandes e reprodutíveis; mantém só a pasta
+data/*.csv
+!data/.gitkeep
+
+# Editor
+.vscode/
