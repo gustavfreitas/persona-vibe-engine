@@ -25,14 +25,23 @@ POPULAR_POOL_SIZE = 30  # vizinhos mais próximos entre os quais se escolhem os 
 
 
 # ------------------------------ dados -------------------------------- #
+def _artifacts_are_fresh() -> bool:
+    """Os ficheiros gerados têm de existir e ser mais recentes que o código e os dados."""
+    generated = [CSV_PATH, DEFAULT_MODEL_PATH]
+    sources = [Path("src/model.py"), DATASET_PATH]
+    if not all(p.exists() for p in generated + sources):
+        return False
+    return min(p.stat().st_mtime for p in generated) >= max(p.stat().st_mtime for p in sources)
+
+
 @st.cache_resource(show_spinner="A preparar o modelo (só na primeira execução)...")
 def ensure_artifacts() -> None:
-    """Gera o CSV com clusters e o modelo se ainda não existirem.
+    """Gera o CSV com clusters e o modelo se faltarem ou estiverem desatualizados.
 
-    Num deploy limpo (Streamlit Cloud) estes ficheiros não vêm no Git.
-    O cache_resource garante que só uma sessão executa o treino.
+    Num deploy (Streamlit Cloud) estes ficheiros não vêm no Git. O cache_resource
+    garante que só uma sessão executa o treino.
     """
-    if CSV_PATH.exists() and DEFAULT_MODEL_PATH.exists():
+    if _artifacts_are_fresh():
         return
     if not DATASET_PATH.exists():
         raise FileNotFoundError(
