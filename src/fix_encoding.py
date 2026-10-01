@@ -15,6 +15,5 @@ def fix(text: str) -> str:
 
 for name in sys.argv[1:]:
     path = Path(name)
-    repaired = fix(path.read_text(encoding="utf-8-sig"))
-    path.write_text(repaired, encoding="utf-8")
+    path.write_text(fix(path.read_text(encoding="utf-8-sig")), encoding="utf-8")
     print(f"{name}: reparado")
