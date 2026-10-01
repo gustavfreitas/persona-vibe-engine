@@ -93,6 +93,11 @@ pip install -r requirements-dev.txt
 python -m pytest -v                      # correr os testes
 ```
 
+**App online:** https://persona-vibe-engine-wrs26wkrbfjbtzbqzr48s8.streamlit.app
+
+> A app publicada usa uma amostra de 30 000 faixas (`data/dataset.csv`).
+> As métricas deste README foram calculadas sobre o dataset completo.
+
 ## Limitações
 
 - O clustering usa só features acústicas: não captura idioma, época nem estilo
