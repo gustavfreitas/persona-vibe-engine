@@ -285,7 +285,7 @@ def render_cards(rows: pd.DataFrame, section: str) -> None:
                     + f'<div class="t-sub">{esc(r["artists"]).replace(";", ", ")}</div>',
                     unsafe_allow_html=True,
                 )
-                meta = [format_duration(r.get("duration_ms"))]
+                meta = [f"⏱ {format_duration(r.get('duration_ms'))}"]
                 if pd.notna(r.get("popularity")):
                     meta.insert(0, f"🔥 {int(r['popularity'])}")
                 st.caption("  ".join(meta))
